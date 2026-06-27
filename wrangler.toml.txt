@@ -1,0 +1,12 @@
+name = "proxy-token"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+# ALLOWED_ORIGIN không phải secret — đổi thành domain thật của ViBaoBuilder
+# (vd: "https://vibaobuilder.pages.dev") trước khi deploy production.
+[vars]
+ALLOWED_ORIGIN = "*"
+
+# HF_TOKEN KHÔNG khai báo ở đây — set bằng lệnh:
+#   wrangler secret put HF_TOKEN
+# (sẽ được hỏi nhập giá trị, không lưu vào file này / không commit lên git)
