@@ -91,9 +91,9 @@ export default {
 };
 
 /**
- * Upload 1 file lên HuggingFace dataset qua Hub API (commit trực tiếp,
- * không cần git clone toàn bộ repo).
- * Docs: https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.upload_file
+ * Upload 1 file lên HuggingFace dataset qua Hub Commit API (endpoint upload
+ * đơn file cũ đã bị retire — endpoint mới dùng NDJSON commit).
+ * Docs: https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.create_commit
  */
 async function uploadToHuggingFace(opts: {
   token: string;
@@ -103,27 +103,42 @@ async function uploadToHuggingFace(opts: {
 }): Promise<string> {
   const { token, path, bytes, mime } = opts;
 
-  // Convert raw binary string -> Uint8Array để gửi đúng dạng nhị phân
-  const len = bytes.length;
-  const buffer = new Uint8Array(len);
-  for (let i = 0; i < len; i++) buffer[i] = bytes.charCodeAt(i);
+  // Convert raw binary string -> base64 chuẩn (API commit cần content base64 trong JSON)
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += bytes[i];
+  const base64Content = btoa(binary);
 
-  // HuggingFace Hub hỗ trợ upload qua endpoint commit-based hoặc qua
-  // resolve/upload trực tiếp với token Bearer. Dùng endpoint upload đơn file:
-  const uploadEndpoint = `https://huggingface.co/api/datasets/${HF_DATASET}/upload/main/${path}`;
+  // NDJSON: dòng đầu là header mô tả commit, dòng sau là từng file thay đổi.
+  const headerLine = JSON.stringify({
+    key: "header",
+    value: {
+      summary: `Upload ${path} via proxy-token`,
+    },
+  });
+  const fileLine = JSON.stringify({
+    key: "file",
+    value: {
+      content: base64Content,
+      path,
+      encoding: "base64",
+    },
+  });
+  const ndjsonBody = `${headerLine}\n${fileLine}\n`;
 
-  const res = await fetch(uploadEndpoint, {
+  const commitEndpoint = `https://huggingface.co/api/datasets/${HF_DATASET}/commit/main`;
+
+  const res = await fetch(commitEndpoint, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      "Content-Type": mime || "application/octet-stream",
+      "Content-Type": "application/x-ndjson",
     },
-    body: buffer,
+    body: ndjsonBody,
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`HuggingFace upload lỗi (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(`HuggingFace upload lỗi (${res.status}): ${text.slice(0, 300)}`);
   }
 
   // URL public để xem/tải file sau khi commit thành công
